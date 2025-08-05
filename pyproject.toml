@@ -1,0 +1,14 @@
+[project]
+name = "ppo-v1-0"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gymnasium[box2d]>=1.2.0",
+    "swig>=4.3.1",
+    "tensorboard>=2.20.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "torchvision>=0.22.1",
+]
