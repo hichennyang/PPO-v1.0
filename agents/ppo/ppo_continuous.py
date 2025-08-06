@@ -5,7 +5,7 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from gymnasium import spaces
 
-from agents.modules import Actor_Gaussian, GaussianActor, Critic
+from agents.modules import GaussianActor, Critic
 from agents.agent import Agent
 
 
@@ -29,29 +29,6 @@ class PPOContinuous(Agent):
         writer: SummaryWriter | None = None,
         num_envs: int = 1,
         device: torch.device = torch.device("cpu")
-
-        # state_dim: int,
-        # action_dim: int,
-        # action_min: np.ndarray,
-        # action_max: np.ndarray,
-        # batch_size: int,
-        # mini_batch_size: int,
-        # max_train_steps: int,
-        # lr_a: float,
-        # actor_hidden_sizes: list[int],
-        # lr_c: float,
-        # critic_hidden_sizes: list[int],
-        # gamma: float,
-        # gae_lambda: float,
-        # epsilon: float,
-        # policy_entropy_coef: float,
-        # use_grad_clip: bool,
-        # use_lr_decay: bool,
-        # use_adv_norm: bool,
-        # repeat: int,
-        # adam_eps: float = 1e-8,
-        # writer: SummaryWriter | None = None,
-        # device: torch.device = torch.device("cpu"),
     ):
         assert isinstance(observation_space, spaces.Box)
         assert isinstance(action_space, spaces.Box)
@@ -102,7 +79,7 @@ class PPOContinuous(Agent):
 
     def on_act(self, **kwargs):
         pass
-
+    
     def update(self, replay_buffer, total_steps: int):
         obs, act, act_log_prob, obs_next, rew, done = replay_buffer.sample()
 
