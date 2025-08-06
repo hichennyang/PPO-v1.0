@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 from agents.ppo.ppo_continuous import PPOContinuous
-from utils import ReplayBuffer
+
 
 def evaluate_policy(env, agent):
     times = 3
@@ -34,14 +34,7 @@ def main(env_id: str, seed: int):
 
     # Build a tensorboard
     writer = SummaryWriter()
-
-    replay_buffer = ReplayBuffer(
-        state_dim = train_env.observation_space.shape[-1],
-        action_dim = train_env.action_space.shape[-1],
-        size = 2000,
-        ignore_obs_next = True
-    )
-    
+  
     agent = PPOContinuous(
         agent_name = "agent",
         observation_space = train_env.observation_space,
@@ -74,22 +67,24 @@ def main(env_id: str, seed: int):
         act, act_log_prob = agent(obs)  # Action and the corresponding log probability
         obs_next, rew, truncated, terminated, _ = train_env.step(act)
         done = truncated | terminated
-
-        replay_buffer.add(
-            rew,
-            terminated,
-            truncated,
-            obs,
-            act,
-            act_log_prob,
+        agent.on_act(
+            total_steps, obs, act, act_log_prob, rew, terminated, truncated
         )
+        # replay_buffer.add(
+        #     rew,
+        #     terminated,
+        #     truncated,
+        #     obs,
+        #     act,
+        #     act_log_prob,
+        # )
         obs = obs_next
         total_steps += 1
         
         # When the number of transitions in buffer reaches batch_size,then update
-        if replay_buffer.size[0].item() >= 2000:
-            agent.update(replay_buffer, total_steps)
-            replay_buffer.reset()
+        if agent.replay_buffer.size[0].item() >= 2000:
+            agent.update(total_steps)
+            # replay_buffer.reset()
         
         # Evaluate the policy every 'evaluate_freq' steps
         if total_steps % int(5e3) == 0:

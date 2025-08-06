@@ -24,7 +24,6 @@ class Agent(nn.Module):
         self.num_envs = num_envs
         self.device = device
 
-
     @abstractmethod
     def on_observe(self, **kwargs):
         ...

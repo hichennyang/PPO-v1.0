@@ -1,12 +1,14 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
+from typing import SupportsFloat
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from gymnasium import spaces
 
-from agents.modules import GaussianActor, Critic
 from agents.agent import Agent
+from agents.modules import GaussianActor, Critic
+from utils import ReplayBuffer
 
 
 class PPOContinuous(Agent):
@@ -61,10 +63,15 @@ class PPOContinuous(Agent):
         self.optimizer_actor = torch.optim.Adam(self.actor.parameters(), lr=self.lr_a, eps=self.adam_eps)
         self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.lr_c, eps=self.adam_eps)
 
-    def on_observe(
-        self,
-        obs: np.ndarray
-    ):
+        self.replay_buffer = ReplayBuffer(
+            state_dim = observation_space.shape[-1],
+            action_dim = action_space.shape[-1],
+            size = replaybuffer_size,
+            num_envs = num_envs,
+            ignore_obs_next = True
+        )
+        
+    def on_observe(self, **kwargs):
         pass
 
     def __call__(self, obs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -77,11 +84,21 @@ class PPOContinuous(Agent):
             act_log_prob: torch.Tensor = dist.log_prob(act)  # The log probability density of the action
         return act.cpu().squeeze(dim=0).numpy(), act_log_prob.cpu().squeeze(dim=0).numpy()
 
-    def on_act(self, **kwargs):
-        pass
+    def on_act(
+        self, 
+        global_step: int,
+        obs: np.ndarray,
+        act: np.ndarray, 
+        act_log_prob: np.ndarray, 
+        rew: SupportsFloat | np.ndarray, 
+        terminated: bool | np.ndarray,
+        truncated: bool | np.ndarray,
+        env_indices: np.ndarray | None = None
+    ):
+        self.replay_buffer.add(rew, terminated, truncated, obs, act, act_log_prob, env_indices)
     
-    def update(self, replay_buffer, total_steps: int):
-        obs, act, act_log_prob, obs_next, rew, done = replay_buffer.sample()
+    def update(self, total_steps: int):
+        obs, act, act_log_prob, obs_next, rew, done = self.replay_buffer.sample()
 
         obs = torch.from_numpy(obs).to(dtype=torch.float32, device=self.device)
         act = torch.from_numpy(act).to(dtype=torch.float32, device=self.device)
@@ -135,5 +152,6 @@ class PPOContinuous(Agent):
                 torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
                 self.optimizer_critic.step()
 
+        self.replay_buffer.reset()
 
         return {"actor_loss": actor_loss.mean().item(), "critic_loss": critic_loss.item()}
