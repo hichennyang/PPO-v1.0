@@ -68,23 +68,15 @@ def main(env_id: str, seed: int):
         obs_next, rew, truncated, terminated, _ = train_env.step(act)
         done = truncated | terminated
         agent.on_act(
-            total_steps, obs, act, act_log_prob, rew, terminated, truncated
+            rew, terminated, truncated, obs, act, act_log_prob, total_steps 
         )
-        # replay_buffer.add(
-        #     rew,
-        #     terminated,
-        #     truncated,
-        #     obs,
-        #     act,
-        #     act_log_prob,
-        # )
+
         obs = obs_next
         total_steps += 1
         
         # When the number of transitions in buffer reaches batch_size,then update
         if agent.replay_buffer.size[0].item() >= 2000:
             agent.update(total_steps)
-            # replay_buffer.reset()
         
         # Evaluate the policy every 'evaluate_freq' steps
         if total_steps % int(5e3) == 0:

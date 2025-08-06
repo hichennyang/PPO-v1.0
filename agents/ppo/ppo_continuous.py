@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from typing import SupportsFloat
+from functools import singledispatchmethod
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from gymnasium import spaces
@@ -34,7 +35,7 @@ class PPOContinuous(Agent):
     ):
         assert isinstance(observation_space, spaces.Box)
         assert isinstance(action_space, spaces.Box)
-        super().__init__(agent_name, observation_space, action_space, writer, num_envs, device)
+        super().__init__(agent_name, observation_space, action_space, num_envs, writer, device)
 
         self.batch_size = batch_size
         self.lr_a = lr_a                            # Learning rate of actor
@@ -70,7 +71,8 @@ class PPOContinuous(Agent):
             num_envs = num_envs,
             ignore_obs_next = True
         )
-        
+        self.returns = np.zeros(shape=(self.num_envs, 1), dtype=np.float32)
+
     def on_observe(self, **kwargs):
         pass
 
@@ -84,20 +86,71 @@ class PPOContinuous(Agent):
             act_log_prob: torch.Tensor = dist.log_prob(act)  # The log probability density of the action
         return act.cpu().squeeze(dim=0).numpy(), act_log_prob.cpu().squeeze(dim=0).numpy()
 
+    @singledispatchmethod
     def on_act(
         self, 
-        global_step: int,
-        obs: np.ndarray,
-        act: np.ndarray, 
-        act_log_prob: np.ndarray, 
         rew: SupportsFloat | np.ndarray, 
         terminated: bool | np.ndarray,
         truncated: bool | np.ndarray,
+        obs: np.ndarray,
+        act: np.ndarray, 
+        act_log_prob: np.ndarray, 
+        global_step: int,
+        env_indices: np.ndarray | None = None
+    ):
+        ...
+    
+    @on_act.register
+    def _(
+        self, 
+        rew: SupportsFloat, 
+        terminated: bool,
+        truncated: bool,
+        obs: np.ndarray,
+        act: np.ndarray, 
+        act_log_prob: np.ndarray, 
+        global_step: int,
         env_indices: np.ndarray | None = None
     ):
         self.replay_buffer.add(rew, terminated, truncated, obs, act, act_log_prob, env_indices)
-    
-    def update(self, total_steps: int):
+        if env_indices is None:
+            env_indices = np.arange(self.num_envs)
+        self.returns[env_indices] += rew
+        done = terminated | truncated
+        if done:
+            if self.writer:
+                self.writer.add_scalar(f"return/{self.agent_name}_mean", self.returns[0].item(), global_step)
+            
+            self.returns[0] = 0.0
+
+    @on_act.register
+    def _(
+        self, 
+        rew: np.ndarray, 
+        terminated: np.ndarray,
+        truncated: np.ndarray,
+        obs: np.ndarray,
+        act: np.ndarray, 
+        act_log_prob: np.ndarray, 
+        global_step: int,
+        env_indices: np.ndarray | None = None
+    ):
+        self.replay_buffer.add(rew, terminated, truncated, obs, act, act_log_prob, env_indices)
+        if env_indices is None:
+            env_indices = np.arange(self.num_envs)
+        self.returns[env_indices] += np.expand_dims(rew, axis=1)
+        done = np.logical_or(terminated, truncated)
+        if np.any(done):
+            indices = np.where(done)[0]                 #TODO: 仿真环境并行下，当每一时刻不是所有的仿真环境都能执行动作的情况下具有严重BUG
+            # indices = env_indices[done]               # 解决上述问题的代码
+            if self.writer:
+                self.writer.add_scalar(f"return/{self.agent_name}_mean", self.returns[indices].mean(axis=0), global_step)
+                if len(indices) > 1:
+                    self.writer.add_scalar(f"return/{self.agent_name}_std", self.returns[indices].std(axis=0), global_step)
+            self.returns[indices] = 0.0
+
+
+    def update(self, global_step: int):
         obs, act, act_log_prob, obs_next, rew, done = self.replay_buffer.sample()
 
         obs = torch.from_numpy(obs).to(dtype=torch.float32, device=self.device)
@@ -128,6 +181,8 @@ class PPOContinuous(Agent):
         adv = ((adv - adv.mean()) / (adv.std() + 1e-5))
 
         # Optimize policy for K epochs:
+        actor_loss_list: list[SupportsFloat] = []
+        critic_loss_list: list[SupportsFloat] = []
         for _ in range(10):
             for index in BatchSampler(SubsetRandomSampler(range(len(obs))), self.batch_size, False):
                 dist = self.actor.get_dist(obs[index])
@@ -152,6 +207,25 @@ class PPOContinuous(Agent):
                 torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
                 self.optimizer_critic.step()
 
+                actor_loss_list.append(actor_loss.mean().item())
+                critic_loss_list.append(critic_loss.item())
+            
+        actor_loss_mean = np.asarray(actor_loss_list, dtype=np.float32).mean()
+        actor_loss_std = np.asarray(actor_loss_list, dtype=np.float32).std()
+        critic_loss_mean = np.asarray(critic_loss_list, dtype=np.float32).mean()
+        critic_loss_std = np.asarray(critic_loss_list, dtype=np.float32).std()
+
         self.replay_buffer.reset()
 
-        return {"actor_loss": actor_loss.mean().item(), "critic_loss": critic_loss.item()}
+        if self.writer:
+            self.writer.add_scalar(f"loss/{self.agent_name}_actor_mean", actor_loss_mean, global_step)
+            self.writer.add_scalar(f"loss/{self.agent_name}_actor_std", actor_loss_std, global_step)
+            self.writer.add_scalar(f"loss/{self.agent_name}_critic_mean", critic_loss_mean, global_step)
+            self.writer.add_scalar(f"loss/{self.agent_name}_critic_std", critic_loss_std, global_step)
+
+        return {
+            f"loss/{self.agent_name}_actor_mean": actor_loss_mean, 
+            f"loss/{self.agent_name}_actor_std": actor_loss_std,
+            f"loss/{self.agent_name}_critic_mean": critic_loss_mean,
+            f"loss/{self.agent_name}_critic_std": critic_loss_std
+        }
