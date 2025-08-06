@@ -1,34 +1,42 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from abc import abstractmethod
 from torch.utils.tensorboard import SummaryWriter
-from abc import ABC, abstractmethod
+from gymnasium import spaces
+
 
 class Agent(nn.Module):
     def __init__(
         self, 
-        batch_size: int,
-        mini_batch_size: int,
+        agent_name: str,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        num_envs: int = 1,
         writer: SummaryWriter | None = None,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
-        self.batch_size = batch_size
-        self.mini_batch_size = mini_batch_size
+        self.agent_name = agent_name
+        self.observation_space = observation_space
+        self.action_space = action_space
         self.writer = writer
+        self.num_envs = num_envs
         self.device = device
 
+
     @abstractmethod
-    def choose_action(
-        self,
-        state: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def on_observe(self, **kwargs):
         ...
 
     @abstractmethod
-    def update(
-        self,
-        replay_buffer, 
-        total_steps
-    ):
+    def __call__(self, obs: np.ndarray) -> np.ndarray:
+        ...
+    
+    @abstractmethod
+    def on_act(self, **kwargs):
+        ...
+
+    @abstractmethod
+    def update(self, global_step: int) -> dict[str, float]:
         ...

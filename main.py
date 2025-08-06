@@ -14,7 +14,7 @@ def evaluate_policy(env, agent):
         done = False
         episode_reward = 0
         while not done:
-            action = agent.evaluate(s)  # We use the deterministic policy during the evaluating
+            action, _ = agent(s)  # We use the deterministic policy during the evaluating
             s_, r, truncated, terminated, _ = env.step(action)
             done = truncated | terminated
 
@@ -28,9 +28,12 @@ def main(env_id: str, seed: int):
     train_env = gymnasium.make(env_id)
     evalu_env = gymnasium.make(env_id)
 
-    # set random seed
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    # # set random seed
+    # np.random.seed(seed)
+    # torch.manual_seed(seed)
+
+    # Build a tensorboard
+    writer = SummaryWriter()
 
     replay_buffer = ReplayBuffer(
         state_dim = train_env.observation_space.shape[-1],
@@ -38,14 +41,13 @@ def main(env_id: str, seed: int):
         size = 2000,
         ignore_obs_next = True
     )
+    
     agent = PPOContinuous(
-        state_dim = train_env.observation_space.shape[-1],
-        action_dim = train_env.action_space.shape[-1],
-        action_min = train_env.action_space.low,
-        action_max = train_env.action_space.high,
-        batch_size = 2000,
-        mini_batch_size = 50,
-        max_train_steps = int(3e6),
+        agent_name = "agent",
+        observation_space = train_env.observation_space,
+        action_space = train_env.action_space,
+        batch_size = 50,
+        replaybuffer_size = 2000,
         lr_a = 3e-4,
         actor_hidden_sizes = [128, 128],
         lr_c = 3e-4,
@@ -54,16 +56,12 @@ def main(env_id: str, seed: int):
         gae_lambda = 0.95,
         epsilon = 0.2,
         policy_entropy_coef = 0.01,
-        use_grad_clip = True,
-        use_lr_decay = True,
-        use_adv_norm = True,
-        repeat = 10,
         adam_eps = 1e-5,
+        writer = writer,
+        num_envs = 1,
         device = torch.device("cuda")
     )
 
-    # Build a tensorboard
-    writer = SummaryWriter()
     done = True
     total_steps = 0
     evaluate_num = 0  # Record the number of evaluations
@@ -73,7 +71,7 @@ def main(env_id: str, seed: int):
         if done:
             obs, _ = train_env.reset()
 
-        act, act_log_prob = agent.choose_action(obs)  # Action and the corresponding log probability
+        act, act_log_prob = agent(obs)  # Action and the corresponding log probability
         obs_next, rew, truncated, terminated, _ = train_env.step(act)
         done = truncated | terminated
 
@@ -102,4 +100,5 @@ def main(env_id: str, seed: int):
             writer.add_scalar('step_rewards_{}'.format(env_id), evaluate_rewards[-1], global_step=total_steps)
 
 if __name__ == "__main__":
-    main("BipedalWalker-v3", seed=10)
+    for i in range(100):
+        main("BipedalWalker-v3", seed=10)
