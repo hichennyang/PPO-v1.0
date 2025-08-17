@@ -14,6 +14,7 @@ class Agent(nn.Module):
         action_space: spaces.Space,
         num_envs: int = 1,
         writer: SummaryWriter | None = None,
+        seed: int | None = None,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
@@ -22,6 +23,11 @@ class Agent(nn.Module):
         self.action_space = action_space
         self.writer = writer
         self.num_envs = num_envs
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
         self.device = device
 
     @abstractmethod
@@ -29,7 +35,7 @@ class Agent(nn.Module):
         ...
 
     @abstractmethod
-    def __call__(self, obs: np.ndarray) -> np.ndarray:
+    def __call__(self, obs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         ...
     
     @abstractmethod

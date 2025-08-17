@@ -25,7 +25,8 @@ def evaluate_policy(env, agent):
     return evaluate_reward / times
 
 def main(env_id: str, seed: int):
-    train_env = gymnasium.make(env_id)
+    # train_env = gymnasium.make(env_id)
+    train_env = gymnasium.make_vec(env_id, num_envs=10)
     evalu_env = gymnasium.make(env_id)
 
     # # set random seed
@@ -37,8 +38,8 @@ def main(env_id: str, seed: int):
   
     agent = PPOContinuous(
         agent_name = "agent",
-        observation_space = train_env.observation_space,
-        action_space = train_env.action_space,
+        observation_space = train_env.single_observation_space,
+        action_space = train_env.single_action_space,
         batch_size = 50,
         replaybuffer_size = 2000,
         lr_a = 3e-4,
@@ -51,7 +52,7 @@ def main(env_id: str, seed: int):
         policy_entropy_coef = 0.01,
         adam_eps = 1e-5,
         writer = writer,
-        num_envs = 1,
+        num_envs = train_env.num_envs,
         device = torch.device("cuda")
     )
 
@@ -60,9 +61,10 @@ def main(env_id: str, seed: int):
     evaluate_num = 0  # Record the number of evaluations
     evaluate_rewards = []  # Record the rewards during the evaluating
 
+    obs, _ = train_env.reset()
     while total_steps < int(3e6):
-        if done:
-            obs, _ = train_env.reset()
+        # if done:
+        #     obs, _ = train_env.reset()
 
         act, act_log_prob = agent(obs)  # Action and the corresponding log probability
         obs_next, rew, truncated, terminated, _ = train_env.step(act)
@@ -89,3 +91,6 @@ def main(env_id: str, seed: int):
 if __name__ == "__main__":
     for i in range(100):
         main("BipedalWalker-v3", seed=10)
+
+# 重写main.py，重点是evaluate部分，以及seed部分，实现实验可复现
+# 编写RND模块，然后进行实验

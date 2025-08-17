@@ -31,11 +31,12 @@ class PPOContinuous(Agent):
         adam_eps: float = 1e-8,
         writer: SummaryWriter | None = None,
         num_envs: int = 1,
+        seed: int | None = None,
         device: torch.device = torch.device("cpu")
     ):
         assert isinstance(observation_space, spaces.Box)
         assert isinstance(action_space, spaces.Box)
-        super().__init__(agent_name, observation_space, action_space, num_envs, writer, device)
+        super().__init__(agent_name, observation_space, action_space, num_envs, writer, seed, device)
 
         self.batch_size = batch_size
         self.lr_a = lr_a                            # Learning rate of actor
