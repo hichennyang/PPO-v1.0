@@ -8,9 +8,9 @@ from torch.utils.tensorboard import SummaryWriter
 from gymnasium import spaces
 
 from agents.agent import Agent
-from agents.modules import GaussianActor, Critic
+from agents.modules import GaussianActor, Critic, ICM
 from utils import ReplayBuffer
-
+from utils.converters import get_converter, Converter
 
 class PPOContinuous(Agent):
     def __init__(
@@ -50,20 +50,32 @@ class PPOContinuous(Agent):
         self.action_min = torch.from_numpy(action_space.low).to(device=self.device)
         self.action_max = torch.from_numpy(action_space.high).to(device=self.device)
 
+        state_converter = get_converter(observation_space)
+        self.action_converter = get_converter(action_space)
+
         self.actor = GaussianActor(
-            state_dim = observation_space.shape[-1],
-            action_dim = action_space.shape[-1],
-            action_min = self.action_min,
-            action_max = self.action_max,
+            state_converter = state_converter,
+            action_converter = self.action_converter,
+            # state_dim = observation_space.shape[-1],
+            # action_dim = action_space.shape[-1],
+            # action_min = self.action_min,
+            # action_max = self.action_max,
             hidden_sizes = actor_hidden_sizes
         ).to(device=self.device)
         self.critic = Critic(
-            state_dim = observation_space.shape[-1],
+            state_converter = state_converter,
+            # state_dim = observation_space.shape[-1],
             hidden_sizes = critic_hidden_sizes
+        ).to(device=self.device)
+        self.icm = ICM(
+            state_converter = state_converter,
+            action_converter = self.action_converter,
+            intrinsic_reward_integration = 0.1
         ).to(device=self.device)
 
         self.optimizer_actor = torch.optim.Adam(self.actor.parameters(), lr=self.lr_a, eps=self.adam_eps)
         self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.lr_c, eps=self.adam_eps)
+        self.optimizer_icm = torch.optim.Adam(self.icm.parameters(), lr=self.lr_a)
 
         self.replay_buffer = ReplayBuffer(
             state_dim = observation_space.shape[-1],
@@ -159,6 +171,8 @@ class PPOContinuous(Agent):
         act_log_prob = torch.from_numpy(act_log_prob).to(dtype=torch.float32, device=self.device)
         obs_next = torch.from_numpy(obs_next).to(dtype=torch.float32, device=self.device)
         rew = torch.from_numpy(rew).to(dtype=torch.float32, device=self.device)
+        rew = self.icm.reward(rew, obs, obs_next, act)
+
         done = torch.from_numpy(done).to(dtype=torch.float32, device=self.device)
         assert len(obs) == len(act) == len(act_log_prob) == len(obs_next) == len(rew) == len(done)
         
@@ -200,13 +214,22 @@ class PPOContinuous(Agent):
                 torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
                 self.optimizer_actor.step()
 
+                # Update critic
                 v_s = self.critic(obs[index])
                 critic_loss = F.mse_loss(v_target[index], v_s)
-                # Update critic
                 self.optimizer_critic.zero_grad()
                 critic_loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
                 self.optimizer_critic.step()
+                
+                # Update icm
+                next_state, next_state_hat, action_hat = self.icm(obs[index], obs_next[index], act[index])
+                forward_loss = 0.5 * (next_state_hat - next_state.detach()).norm(2, dim=-1).pow(2).mean()
+                inverse_loss = self.action_converter.distance(action_hat, act[index])
+                curiosity_loss = forward_loss + inverse_loss
+                self.optimizer_icm.zero_grad()
+                curiosity_loss.backward()
+                self.optimizer_icm.step()
 
                 actor_loss_list.append(actor_loss.mean().item())
                 critic_loss_list.append(critic_loss.item())
