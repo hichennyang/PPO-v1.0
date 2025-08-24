@@ -170,9 +170,10 @@ class PPOContinuous(Agent):
         act = torch.from_numpy(act).to(dtype=torch.float32, device=self.device)
         act_log_prob = torch.from_numpy(act_log_prob).to(dtype=torch.float32, device=self.device)
         obs_next = torch.from_numpy(obs_next).to(dtype=torch.float32, device=self.device)
-        rew = torch.from_numpy(rew).to(dtype=torch.float32, device=self.device)
-        rew = self.icm.reward(rew, obs, obs_next, act)
-
+        raw_rew = torch.from_numpy(rew).to(dtype=torch.float32, device=self.device)
+        
+        rew = self.icm.reward(raw_rew, obs, obs_next, act)
+        
         done = torch.from_numpy(done).to(dtype=torch.float32, device=self.device)
         assert len(obs) == len(act) == len(act_log_prob) == len(obs_next) == len(rew) == len(done)
         
@@ -229,6 +230,7 @@ class PPOContinuous(Agent):
                 curiosity_loss = forward_loss + inverse_loss
                 self.optimizer_icm.zero_grad()
                 curiosity_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.icm.parameters(), 0.5)
                 self.optimizer_icm.step()
 
                 actor_loss_list.append(actor_loss.mean().item())

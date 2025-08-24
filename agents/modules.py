@@ -155,9 +155,10 @@ class ICM(nn.Module):
         with torch.no_grad():
             next_state, next_state_hat, _ = self.forward(state, next_state, action)
             intrinsic_reward = (next_state - next_state_hat).norm(2, dim=-1, keepdim=True).pow(2)
-
-        return (1.-self.tau)*reward + self.tau*intrinsic_reward
-
+            # print(intrinsic_reward.mean(dim=0), intrinsic_reward.max(dim=0), intrinsic_reward.min(dim=0))
+        # return (1.-self.tau)*reward + self.tau*intrinsic_reward
+        return reward + 0.1*intrinsic_reward
+    
     # def loss(self, state: Tensor, next_state: Tensor, action: Tensor):
     #     next_state, next_state_hat, action_hat = self.forward(state, next_state, action)
     #     forward_loss = 0.5 * (next_state_hat - next_state.detach()).norm(2, dim=-1).pow(2).mean()

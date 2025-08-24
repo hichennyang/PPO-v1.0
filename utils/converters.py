@@ -6,12 +6,9 @@ from torch.distributions import Distribution, Categorical, Normal
 from torch.nn import CrossEntropyLoss, MSELoss
 from gymnasium import spaces
 
-
-
 # 参考：https://github.com/adik993/ppo-pytorch/blob/master/envs/converters.py#L15
-# 下一步工作内容，先按照这个converter改进现有PPO算法的接口
-# 下下步工作内容，实现ICM模块
-# 下下下步工作内容，改进ICM模块，使其适应含有冗余信息的输入（其实就是在特征提取模块上做文章），先用一个神经网络提取状态特征，然后再用原始特征提取得到的结果减去该特征
+# 下一步工作内容，给icm模块添加上tensorboard的支持，并完善接口
+# 下下步工作内容，改进ICM模块，使其适应含有冗余信息的输入（其实就是在特征提取模块上做文章），先用一个神经网络提取状态特征，然后再用原始特征提取得到的结果减去该特征
 class Converter(ABC):
     @property
     @abstractmethod
